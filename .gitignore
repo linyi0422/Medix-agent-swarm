@@ -173,3 +173,10 @@ cython_debug/
 *.gguf
 *.db
 /medix-agent-swarm/knowledge/data/*.db
+/medix-agent-swarm/knowledge/data/milvus_lite.db/
+
+# Runtime state
+/medix-agent-swarm/.mem0/
+/medix-agent-swarm/memory/agents/
+/medix-agent-swarm/memory/swarm/
+/medix-agent-swarm/eval_results/_runtime_milvus_lite.db/

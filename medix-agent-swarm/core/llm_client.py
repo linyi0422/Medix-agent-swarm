@@ -38,6 +38,17 @@ class LLMResponse:
 class LLMClient:
     """统一的LLM客户端，支持多种模型"""
 
+    @staticmethod
+    def _validate_api_key(api_key: str):
+        if not api_key:
+            raise ValueError("DEEPSEEK_API_KEY 未设置，请先在终端设置真实的 DeepSeek API Key。")
+        if api_key.strip() in {"你的新 DeepSeek Key", "your-api-key", "your-llm-api-key"}:
+            raise ValueError("DEEPSEEK_API_KEY 还是占位文字，请替换成真实的 DeepSeek API Key。")
+        try:
+            api_key.encode("ascii")
+        except UnicodeEncodeError as e:
+            raise ValueError("DEEPSEEK_API_KEY 不能包含中文或其他非 ASCII 字符，请设置真实的 API Key。") from e
+
     def __init__(self, model_type: str = "openai_compatible"):
         """
         初始化LLM客户端
@@ -50,6 +61,7 @@ class LLMClient:
         if model_type == "openai_compatible":
             # 使用 OpenAI 兼容的 API（通过 config.py 配置）
             self.config = LLM_CONFIG
+            self._validate_api_key(self.config["api_key"])
             self.client = AsyncOpenAI(
                 api_key=self.config["api_key"],
                 base_url=self.config["base_url"]
@@ -57,6 +69,7 @@ class LLMClient:
             self.model_name = self.config["model_name"]
             self.temperature = self.config.get("temperature", 0.7)
             self.max_tokens = self.config.get("max_tokens", 8192)
+            self.extra_body = self.config.get("extra_body")
         else:
             raise ValueError(f"Unknown model type: {model_type}")
 
@@ -84,13 +97,17 @@ class LLMClient:
 
             logger.debug(f"Calling LLM ({self.model_type}) with {len(messages)} messages")
 
-            response = await self.client.chat.completions.create(
-                model=self.model_name,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
+            request_params = {
+                "model": self.model_name,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
                 **kwargs
-            )
+            }
+            if self.extra_body and "extra_body" not in request_params:
+                request_params["extra_body"] = self.extra_body
+
+            response = await self.client.chat.completions.create(**request_params)
 
             content = response.choices[0].message.content
             logger.debug(f"LLM response length: {len(content)} chars")
@@ -174,6 +191,8 @@ class LLMClient:
                 "max_tokens": max_tokens,
                 **kwargs
             }
+            if self.extra_body and "extra_body" not in request_params:
+                request_params["extra_body"] = self.extra_body
 
             # 添加工具参数（如果提供）
             if tools:

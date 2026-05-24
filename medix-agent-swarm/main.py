@@ -113,7 +113,7 @@ async def interactive_mode():
             # 显示回答
             print("\n📋 回答：")
             print("-" * 60)
-            print(result['answer'])
+            print(result.get('answer') or result.get('error') or "系统未返回回答，请检查上方错误日志。")
             print("-" * 60)
 
             # 显示建议（如果有）
@@ -123,7 +123,8 @@ async def interactive_mode():
                     print(f"  {i}. {suggestion}")
 
             # 显示免责声明
-            print(f"\n{result['disclaimer']}")
+            if result.get('disclaimer'):
+                print(f"\n{result['disclaimer']}")
             print("\n" + "=" * 60 + "\n")
 
         except KeyboardInterrupt:

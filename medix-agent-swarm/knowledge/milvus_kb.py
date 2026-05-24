@@ -9,6 +9,7 @@
 参考实现：/Users/saintgeo/Desktop/self-learn/shanglv
 """
 import json
+import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from loguru import logger
@@ -30,7 +31,7 @@ class MedicalKnowledgeBase:
 
     def __init__(
         self,
-        db_path: str = "./knowledge/data/milvus_lite.db",
+        db_path: Optional[str] = None,
         collection_name: str = "medical_knowledge",
         embedding_model: str = "BAAI/bge-small-zh-v1.5"
     ):
@@ -46,11 +47,11 @@ class MedicalKnowledgeBase:
         if hasattr(self, '_initialized'):
             return
 
-        self.db_path = db_path
+        self.db_path = db_path or os.getenv("MEDIX_MILVUS_DB_PATH", "./knowledge/data/milvus_lite.db")
         self.collection_name = collection_name
 
         # 确保数据目录存在
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
 
         # 初始化 Embedding 模型（支持本地路径）
         # 优先检查本地缓存路径
@@ -74,8 +75,8 @@ class MedicalKnowledgeBase:
         logger.info(f"Embedding model loaded (dimension={self.embedding_dim})")
 
         # 初始化 Milvus Lite
-        logger.info(f"Connecting to Milvus Lite: {db_path}")
-        self.milvus_client = MilvusClient(db_path)
+        logger.info(f"Connecting to Milvus Lite: {self.db_path}")
+        self.milvus_client = MilvusClient(self.db_path)
 
         # 创建 collection（如果不存在）
         if not self.milvus_client.has_collection(collection_name):
@@ -89,7 +90,15 @@ class MedicalKnowledgeBase:
         else:
             logger.info(f"Collection already exists: {collection_name}")
 
+        self._load_collection()
         self._initialized = True
+
+    def _load_collection(self):
+        """Load the collection before search when using Milvus Lite."""
+        try:
+            self.milvus_client.load_collection(self.collection_name)
+        except Exception as e:
+            logger.warning(f"Failed to load collection {self.collection_name}: {e}")
 
     def _chunk_text(self, text: str, chunk_size: int = 1024, overlap: int = 100) -> List[str]:
         """
@@ -165,6 +174,7 @@ class MedicalKnowledgeBase:
 
         # 插入
         self.milvus_client.insert(self.collection_name, data)
+        self._load_collection()
         logger.info(f"Successfully added {len(data)} chunks")
 
         return len(data)
@@ -198,6 +208,7 @@ class MedicalKnowledgeBase:
 
         # 检索
         try:
+            self._load_collection()
             results = self.milvus_client.search(
                 collection_name=self.collection_name,
                 data=[query_vector.tolist()],
