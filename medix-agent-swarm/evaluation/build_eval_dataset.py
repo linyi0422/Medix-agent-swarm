@@ -24,7 +24,7 @@ def build_dataset() -> dict[str, Any]:
         "dataset_name": "medix_agent_swarm_core_eval",
         "version": "2026-05-25.v1",
         "language": "zh-CN",
-        "purpose": "Portfolio smoke/e2e evaluation for MediX Agent Swarm.",
+        "purpose": "Portfolio core-function regression evaluation for MediX Agent Swarm.",
         "construction_method": {
             "source": "curated from the repository's advertised capabilities and available local knowledge documents",
             "selection_principles": [

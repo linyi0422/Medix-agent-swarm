@@ -8,7 +8,7 @@
 
 ## 评测集构建
 
-- 构建方式：根据项目 README 宣称能力、现有 Skills、内置 Milvus 知识库文档人工策划小样本 smoke/e2e 评测集。
+- 构建方式：根据项目 README 宣称能力、现有 Skills、内置 Milvus 知识库文档人工策划小样本核心功能回归评测集。
 - 覆盖维度：llm_connectivity, single_agent_consultation, skill_routing, local_rag, urgent_risk_triage, short_term_context
 - 默认通过标准：返回非空回答；需要 Skill 的用例能观察到预期 Skill 调用；回答命中至少一个配置关键词。
 - 排除规则：不使用真实患者隐私数据，不声明真实临床诊断结论，不依赖外网搜索作为通过条件。
@@ -103,7 +103,7 @@
 - Mem0 长期记忆未配置 Key，本次评测只验证短期上下文。
 - 复杂 Swarm 问题可能触发 DuckDuckGo 外网搜索，存在限流和 90 秒超时风险。
 - 医疗内容只适合产品/工程演示，不应作为真实诊疗建议。
-- 当前评测是小样本 smoke/e2e baseline，不等价于医学安全评测。
+- 当前评测是小样本核心功能回归评测，不等价于医学安全评测。
 
 ## 复跑方式
 
