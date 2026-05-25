@@ -2,8 +2,17 @@
 
 生成时间：2026-05-25 01:41:37
 评测规模：5 个核心场景
+评测集：medix_agent_swarm_core_eval / 2026-05-25.v1
 通过情况：5/5
 冷启动初始化耗时：3.54s
+
+## 评测集构建
+
+- 构建方式：根据项目 README 宣称能力、现有 Skills、内置 Milvus 知识库文档人工策划小样本 smoke/e2e 评测集。
+- 覆盖维度：llm_connectivity, single_agent_consultation, skill_routing, local_rag, urgent_risk_triage, short_term_context
+- 默认通过标准：返回非空回答；需要 Skill 的用例能观察到预期 Skill 调用；回答命中至少一个配置关键词。
+- 排除规则：不使用真实患者隐私数据，不声明真实临床诊断结论，不依赖外网搜索作为通过条件。
+- 可复现入口：`evaluation/build_eval_dataset.py` 生成 `evaluation/datasets/medix_eval_cases.json`，`evaluation/run_eval.py` 从该 JSON 读取用例执行。
 
 ## 评测范围
 
@@ -28,6 +37,8 @@
 ### 基础健康咨询
 
 - 结果：通过
+- 用例类型：swarm
+- 覆盖维度：llm_connectivity, single_agent_consultation
 - 是否有回答：True
 - 预期 Skill 命中：True
 - 关键词校验：True
@@ -38,6 +49,8 @@
 ### 症状咨询：嘴唇干裂
 
 - 结果：通过
+- 用例类型：swarm
+- 覆盖维度：skill_routing, single_agent_consultation
 - 是否有回答：True
 - 预期 Skill 命中：True
 - 关键词校验：True
@@ -48,6 +61,8 @@
 ### 本地 RAG：高血压临床指南
 
 - 结果：通过
+- 用例类型：direct_skill
+- 覆盖维度：local_rag
 - 是否有回答：True
 - 预期 Skill 命中：True
 - 关键词校验：True
@@ -58,6 +73,8 @@
 ### 紧急风险识别：胸痛呼吸困难
 
 - 结果：通过
+- 用例类型：swarm
+- 覆盖维度：urgent_risk_triage, skill_routing
 - 是否有回答：True
 - 预期 Skill 命中：True
 - 关键词校验：True
@@ -68,6 +85,8 @@
 ### 多轮上下文追问
 
 - 结果：通过
+- 用例类型：multiturn
+- 覆盖维度：short_term_context, urgent_risk_triage
 - 是否有回答：True
 - 预期 Skill 命中：True
 - 关键词校验：True
@@ -94,4 +113,10 @@ $env:DEEPSEEK_API_KEY="sk-你的真实key"
 $env:PYTHONPATH="C:\Users\nings\Downloads\宁思源简历_V3_2026-03-20-15_33_30\Medix-agent-swarm;C:\Users\nings\Downloads\宁思源简历_V3_2026-03-20-15_33_30\Medix-agent-swarm\medix-agent-swarm"
 $env:USERPROFILE="C:\Users\nings\Downloads\宁思源简历_V3_2026-03-20-15_33_30\Medix-agent-swarm\medix-agent-swarm"
 .\.venv\Scripts\python.exe -X utf8 evaluation\run_eval.py
+```
+
+只重建评测集：
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 evaluation\build_eval_dataset.py
 ```

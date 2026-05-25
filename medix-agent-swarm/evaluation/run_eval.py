@@ -23,6 +23,7 @@ from typing import Any, Awaitable, Callable
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PACKAGE_ROOT.parent
+DEFAULT_DATASET_PATH = PACKAGE_ROOT / "evaluation" / "datasets" / "medix_eval_cases.json"
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(PACKAGE_ROOT))
 
@@ -31,10 +32,12 @@ sys.path.insert(0, str(PACKAGE_ROOT))
 class EvalCase:
     case_id: str
     title: str
+    case_type: str
     expected_capability: str
     runner: Callable[[], Awaitable[dict[str, Any]]]
     expected_skills: list[str] = field(default_factory=list)
     must_contain_any: list[str] = field(default_factory=list)
+    evaluation_focus: list[str] = field(default_factory=list)
     timeout_seconds: int = 90
 
 
@@ -90,78 +93,90 @@ async def run_swarm_case(coordinator, question: str, session_id: str) -> dict[st
     return await coordinator.process(question, session_id=session_id)
 
 
-async def run_clinical_guideline_case() -> dict[str, Any]:
+async def run_direct_skill_case(skill_name: str, skill_args: dict[str, Any]) -> dict[str, Any]:
+    if skill_name != "clinical_guideline":
+        raise ValueError(f"Unsupported direct skill case: {skill_name}")
+
     skill_path = PACKAGE_ROOT / ".claude" / "skills" / "clinical-guideline" / "script"
     sys.path.insert(0, str(skill_path))
     from guideline import clinical_guideline
 
-    result = await clinical_guideline("hypertension", max_results=1)
+    result = await clinical_guideline(
+        skill_args.get("disease", "hypertension"),
+        max_results=skill_args.get("max_results", 1),
+    )
     return {
         "answer": result.get("answer", ""),
         "source": result.get("source"),
         "guideline_title": result.get("guideline_title"),
         "year": result.get("year"),
         "swarm_enabled": False,
-        "direct_skill": "clinical_guideline",
+        "direct_skill": skill_name,
     }
 
 
-async def run_multiturn_case(coordinator) -> dict[str, Any]:
-    session_id = "eval-multiturn-context"
-    first = await run_swarm_case(coordinator, "我嘴唇一直干裂，可能是什么原因？", session_id=session_id)
-    second = await run_swarm_case(coordinator, "那我需要去医院吗？", session_id=session_id)
+async def run_multiturn_case(coordinator, prompts: list[str], session_id: str) -> dict[str, Any]:
+    if len(prompts) < 2:
+        raise ValueError("Multiturn cases require at least two prompts.")
+
+    previous_answers = []
+    result: dict[str, Any] = {}
+    for prompt in prompts:
+        result = await run_swarm_case(coordinator, prompt, session_id=session_id)
+        previous_answers.append(result.get("answer") or "")
+
     return {
-        "answer": second.get("answer", ""),
-        "first_answer_preview": (first.get("answer") or "")[:260],
-        "swarm_enabled": second.get("swarm_enabled"),
+        "answer": result.get("answer", ""),
+        "first_answer_preview": previous_answers[0][:260],
+        "swarm_enabled": result.get("swarm_enabled"),
         "session_id": session_id,
-        "raw": second,
+        "raw": result,
     }
 
 
-def build_cases(coordinator) -> list[EvalCase]:
-    return [
-        EvalCase(
-            case_id="basic_health_advice",
-            title="基础健康咨询",
-            expected_capability="DeepSeek 接入 + 单 Agent 健康建议",
-            runner=lambda: run_swarm_case(coordinator, "多喝水对健康有什么好处？", "eval-basic-health"),
-            must_contain_any=["水", "饮水", "健康"],
-        ),
-        EvalCase(
-            case_id="symptom_lip_cracking",
-            title="症状咨询：嘴唇干裂",
-            expected_capability="症状分析 + 生活方式建议 + 就医提醒",
-            runner=lambda: run_swarm_case(coordinator, "我嘴唇一直干裂，可能是什么原因？", "eval-lip-cracking"),
-            expected_skills=["analyze_symptoms", "assess_risk", "search_knowledge"],
-            must_contain_any=["唇", "干裂", "口唇"],
-        ),
-        EvalCase(
-            case_id="local_rag_guideline",
-            title="本地 RAG：高血压临床指南",
-            expected_capability="Milvus 本地知识库 + clinical_guideline Skill",
-            runner=run_clinical_guideline_case,
-            expected_skills=["clinical_guideline"],
-            must_contain_any=["高血压", "指南", "140/90"],
-            timeout_seconds=60,
-        ),
-        EvalCase(
-            case_id="emergency_triage",
-            title="紧急风险识别：胸痛呼吸困难",
-            expected_capability="急症识别 + 安全分诊",
-            runner=lambda: run_swarm_case(coordinator, "我胸痛、呼吸困难、出冷汗，严重吗？", "eval-emergency"),
-            expected_skills=["assess_risk"],
-            must_contain_any=["急", "就医", "120", "急诊"],
-        ),
-        EvalCase(
-            case_id="multiturn_context",
-            title="多轮上下文追问",
-            expected_capability="短期记忆 + 上下文理解",
-            runner=lambda: run_multiturn_case(coordinator),
-            must_contain_any=["医院", "就医", "皮肤科", "口腔科"],
-            timeout_seconds=150,
-        ),
-    ]
+def load_eval_dataset(dataset_path: Path) -> dict[str, Any]:
+    if not dataset_path.exists():
+        raise SystemExit(f"Evaluation dataset not found: {dataset_path}")
+    dataset = json.loads(dataset_path.read_text(encoding="utf-8"))
+    if "cases" not in dataset or not isinstance(dataset["cases"], list):
+        raise SystemExit("Evaluation dataset must contain a cases list.")
+    return dataset
+
+
+def build_case(coordinator, raw_case: dict[str, Any]) -> EvalCase:
+    case_type = raw_case["case_type"]
+    prompts = raw_case.get("prompts") or []
+    session_id = raw_case.get("session_id", raw_case["case_id"])
+
+    if case_type == "swarm":
+        if len(prompts) != 1:
+            raise ValueError(f"{raw_case['case_id']} swarm cases require exactly one prompt.")
+        runner = lambda: run_swarm_case(coordinator, prompts[0], session_id)
+    elif case_type == "multiturn":
+        runner = lambda: run_multiturn_case(coordinator, prompts, session_id)
+    elif case_type == "direct_skill":
+        runner = lambda: run_direct_skill_case(
+            raw_case["direct_skill"],
+            raw_case.get("skill_args", {}),
+        )
+    else:
+        raise ValueError(f"Unsupported case_type: {case_type}")
+
+    return EvalCase(
+        case_id=raw_case["case_id"],
+        title=raw_case["title"],
+        case_type=case_type,
+        expected_capability=raw_case["expected_capability"],
+        runner=runner,
+        expected_skills=raw_case.get("expected_skills", []),
+        must_contain_any=raw_case.get("must_contain_any", []),
+        evaluation_focus=raw_case.get("evaluation_focus", []),
+        timeout_seconds=raw_case.get("timeout_seconds", 90),
+    )
+
+
+def build_cases(coordinator, dataset: dict[str, Any]) -> list[EvalCase]:
+    return [build_case(coordinator, raw_case) for raw_case in dataset["cases"]]
 
 
 async def run_case(case: EvalCase, recorder: SkillRecorder) -> dict[str, Any]:
@@ -201,12 +216,14 @@ async def run_case(case: EvalCase, recorder: SkillRecorder) -> dict[str, Any]:
         "case_id": case.case_id,
         "title": case.title,
         "expected_capability": case.expected_capability,
+        "case_type": case.case_type,
         "status": "pass" if pass_checks else "fail",
         "has_answer": bool(answer),
         "expected_skills": case.expected_skills,
         "skills_called": skills,
         "expected_skill_hit": expected_skill_hit,
         "keyword_hit": keyword_hit,
+        "evaluation_focus": case.evaluation_focus,
         "swarm_enabled": result.get("swarm_enabled"),
         "agents_involved": result.get("agents_involved"),
         "elapsed_seconds": elapsed,
@@ -216,7 +233,12 @@ async def run_case(case: EvalCase, recorder: SkillRecorder) -> dict[str, Any]:
     }
 
 
-def render_markdown(results: list[dict[str, Any]], generated_at: str, cold_start_seconds: float) -> str:
+def render_markdown(
+    results: list[dict[str, Any]],
+    generated_at: str,
+    cold_start_seconds: float,
+    dataset: dict[str, Any],
+) -> str:
     passed = sum(1 for item in results if item["status"] == "pass")
     total = len(results)
 
@@ -225,8 +247,16 @@ def render_markdown(results: list[dict[str, Any]], generated_at: str, cold_start
         "",
         f"生成时间：{generated_at}",
         f"评测规模：{total} 个核心场景",
+        f"评测集：{dataset.get('dataset_name')} / {dataset.get('version')}",
         f"通过情况：{passed}/{total}",
         f"冷启动初始化耗时：{cold_start_seconds}s",
+        "",
+        "## 评测集构建",
+        "",
+        f"- 构建方式：{dataset.get('construction_method', {}).get('source')}",
+        f"- 覆盖维度：{', '.join(dataset.get('coverage_dimensions', []))}",
+        f"- 默认通过标准：{'; '.join(dataset.get('default_pass_criteria', []))}",
+        "- 排除规则：不使用真实患者隐私数据，不声明真实临床诊断结论，不依赖外网搜索作为通过条件。",
         "",
         "## 评测范围",
         "",
@@ -264,6 +294,8 @@ def render_markdown(results: list[dict[str, Any]], generated_at: str, cold_start
                 f"### {item['title']}",
                 "",
                 f"- 结果：{'通过' if item['status'] == 'pass' else '未通过'}",
+                f"- 用例类型：{item['case_type']}",
+                f"- 覆盖维度：{', '.join(item.get('evaluation_focus') or []) or '-'}",
                 f"- 是否有回答：{item['has_answer']}",
                 f"- 预期 Skill 命中：{item['expected_skill_hit']}",
                 f"- 关键词校验：{item['keyword_hit']}",
@@ -301,6 +333,12 @@ def render_markdown(results: list[dict[str, Any]], generated_at: str, cold_start
             ".\\.venv\\Scripts\\python.exe -X utf8 evaluation\\run_eval.py",
             "```",
             "",
+            "只重建评测集：",
+            "",
+            "```powershell",
+            ".\\.venv\\Scripts\\python.exe -X utf8 evaluation\\build_eval_dataset.py",
+            "```",
+            "",
         ]
     )
     return "\n".join(lines)
@@ -313,7 +351,25 @@ async def main() -> None:
         default=str(PACKAGE_ROOT / "eval_results"),
         help="Directory for JSON and Markdown evaluation outputs.",
     )
+    parser.add_argument(
+        "--dataset",
+        default=str(DEFAULT_DATASET_PATH),
+        help="Path to the evaluation dataset JSON.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate and print the dataset without calling the LLM.",
+    )
     args = parser.parse_args()
+
+    dataset = load_eval_dataset(Path(args.dataset))
+    if args.dry_run:
+        print(f"Dataset: {dataset.get('dataset_name')} / {dataset.get('version')}")
+        print(f"Cases: {len(dataset['cases'])}")
+        for case in dataset["cases"]:
+            print(f"- {case['case_id']}: {case['title']} ({case['case_type']})")
+        return
 
     validate_environment()
     output_dir = Path(args.output_dir)
@@ -333,7 +389,7 @@ async def main() -> None:
 
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     results = []
-    for case in build_cases(coordinator):
+    for case in build_cases(coordinator, dataset):
         print(f"Running {case.case_id}: {case.title}")
         results.append(await run_case(case, recorder))
 
@@ -350,6 +406,12 @@ async def main() -> None:
                     "failed": sum(1 for item in results if item["status"] != "pass"),
                     "cold_start_seconds": cold_start_seconds,
                 },
+                "dataset": {
+                    "dataset_name": dataset.get("dataset_name"),
+                    "version": dataset.get("version"),
+                    "coverage_dimensions": dataset.get("coverage_dimensions", []),
+                    "default_pass_criteria": dataset.get("default_pass_criteria", []),
+                },
                 "results": results,
             },
             ensure_ascii=False,
@@ -357,7 +419,10 @@ async def main() -> None:
         ),
         encoding="utf-8",
     )
-    report_path.write_text(render_markdown(results, generated_at, cold_start_seconds), encoding="utf-8")
+    report_path.write_text(
+        render_markdown(results, generated_at, cold_start_seconds, dataset),
+        encoding="utf-8",
+    )
 
     print(f"Wrote {json_path}")
     print(f"Wrote {report_path}")

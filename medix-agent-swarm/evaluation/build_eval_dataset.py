@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""
+Build the curated MediX evaluation dataset.
+
+The dataset is intentionally small and deterministic. It is meant for portfolio
+demo validation: prove that the app can connect to an LLM, route to skills,
+retrieve local medical knowledge, recognize urgent-risk wording, and keep short
+multi-turn context.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+from typing import Any
+
+
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_OUTPUT = PACKAGE_ROOT / "evaluation" / "datasets" / "medix_eval_cases.json"
+
+
+def build_dataset() -> dict[str, Any]:
+    return {
+        "dataset_name": "medix_agent_swarm_core_eval",
+        "version": "2026-05-25.v1",
+        "language": "zh-CN",
+        "purpose": "Portfolio smoke/e2e evaluation for MediX Agent Swarm.",
+        "construction_method": {
+            "source": "curated from the repository's advertised capabilities and available local knowledge documents",
+            "selection_principles": [
+                "Cover the shortest path from user query to LLM response.",
+                "Cover at least one symptom-analysis path that should call medical skills.",
+                "Cover one local RAG path backed by the bundled Milvus knowledge base.",
+                "Cover one urgent-risk triage path with explicit safety language.",
+                "Cover one multi-turn follow-up path that depends on prior context.",
+            ],
+            "exclusion_rules": [
+                "No personally identifiable patient data.",
+                "No hidden clinical ground truth or real diagnosis claims.",
+                "No cases that require external web search to pass.",
+            ],
+        },
+        "coverage_dimensions": [
+            "llm_connectivity",
+            "single_agent_consultation",
+            "skill_routing",
+            "local_rag",
+            "urgent_risk_triage",
+            "short_term_context",
+        ],
+        "default_pass_criteria": [
+            "The case returns a non-empty answer.",
+            "Expected skill calls are observed when the case requires a skill.",
+            "At least one configured keyword appears in the answer.",
+        ],
+        "cases": [
+            {
+                "case_id": "basic_health_advice",
+                "title": "基础健康咨询",
+                "case_type": "swarm",
+                "expected_capability": "DeepSeek 接入 + 单 Agent 健康建议",
+                "session_id": "eval-basic-health",
+                "prompts": ["多喝水对健康有什么好处？"],
+                "expected_skills": [],
+                "must_contain_any": ["水", "饮水", "健康"],
+                "timeout_seconds": 90,
+                "evaluation_focus": ["llm_connectivity", "single_agent_consultation"],
+            },
+            {
+                "case_id": "symptom_lip_cracking",
+                "title": "症状咨询：嘴唇干裂",
+                "case_type": "swarm",
+                "expected_capability": "症状分析 + 生活方式建议 + 就医提醒",
+                "session_id": "eval-lip-cracking",
+                "prompts": ["我嘴唇一直干裂，可能是什么原因？"],
+                "expected_skills": ["analyze_symptoms", "assess_risk", "search_knowledge"],
+                "must_contain_any": ["唇", "干裂", "口唇"],
+                "timeout_seconds": 90,
+                "evaluation_focus": ["skill_routing", "single_agent_consultation"],
+            },
+            {
+                "case_id": "local_rag_guideline",
+                "title": "本地 RAG：高血压临床指南",
+                "case_type": "direct_skill",
+                "expected_capability": "Milvus 本地知识库 + clinical_guideline Skill",
+                "direct_skill": "clinical_guideline",
+                "skill_args": {"disease": "hypertension", "max_results": 1},
+                "expected_skills": ["clinical_guideline"],
+                "must_contain_any": ["高血压", "指南", "140/90"],
+                "timeout_seconds": 60,
+                "evaluation_focus": ["local_rag"],
+            },
+            {
+                "case_id": "emergency_triage",
+                "title": "紧急风险识别：胸痛呼吸困难",
+                "case_type": "swarm",
+                "expected_capability": "急症识别 + 安全分诊",
+                "session_id": "eval-emergency",
+                "prompts": ["我胸痛、呼吸困难、出冷汗，严重吗？"],
+                "expected_skills": ["assess_risk"],
+                "must_contain_any": ["急", "就医", "120", "急诊"],
+                "timeout_seconds": 90,
+                "evaluation_focus": ["urgent_risk_triage", "skill_routing"],
+            },
+            {
+                "case_id": "multiturn_context",
+                "title": "多轮上下文追问",
+                "case_type": "multiturn",
+                "expected_capability": "短期记忆 + 上下文理解",
+                "session_id": "eval-multiturn-context",
+                "prompts": [
+                    "我嘴唇一直干裂，可能是什么原因？",
+                    "那我需要去医院吗？",
+                ],
+                "expected_skills": [],
+                "must_contain_any": ["医院", "就医", "皮肤科", "口腔科"],
+                "timeout_seconds": 150,
+                "evaluation_focus": ["short_term_context", "urgent_risk_triage"],
+            },
+        ],
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Build MediX evaluation dataset JSON.")
+    parser.add_argument(
+        "--output",
+        default=str(DEFAULT_OUTPUT),
+        help="Output path for the evaluation dataset JSON.",
+    )
+    args = parser.parse_args()
+
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    dataset = build_dataset()
+    output.write_text(json.dumps(dataset, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"Wrote {output}")
+    print(f"Cases: {len(dataset['cases'])}")
+
+
+if __name__ == "__main__":
+    main()

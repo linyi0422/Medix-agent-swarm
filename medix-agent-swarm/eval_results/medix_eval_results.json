@@ -6,17 +6,39 @@
     "failed": 0,
     "cold_start_seconds": 3.54
   },
+  "dataset": {
+    "dataset_name": "medix_agent_swarm_core_eval",
+    "version": "2026-05-25.v1",
+    "coverage_dimensions": [
+      "llm_connectivity",
+      "single_agent_consultation",
+      "skill_routing",
+      "local_rag",
+      "urgent_risk_triage",
+      "short_term_context"
+    ],
+    "default_pass_criteria": [
+      "The case returns a non-empty answer.",
+      "Expected skill calls are observed when the case requires a skill.",
+      "At least one configured keyword appears in the answer."
+    ]
+  },
   "results": [
     {
       "case_id": "basic_health_advice",
       "title": "基础健康咨询",
       "expected_capability": "DeepSeek 接入 + 单 Agent 健康建议",
+      "case_type": "swarm",
       "status": "pass",
       "has_answer": true,
       "expected_skills": [],
       "skills_called": [],
       "expected_skill_hit": true,
       "keyword_hit": true,
+      "evaluation_focus": [
+        "llm_connectivity",
+        "single_agent_consultation"
+      ],
       "swarm_enabled": false,
       "agents_involved": null,
       "elapsed_seconds": 7.05,
@@ -33,6 +55,7 @@
       "case_id": "symptom_lip_cracking",
       "title": "症状咨询：嘴唇干裂",
       "expected_capability": "症状分析 + 生活方式建议 + 就医提醒",
+      "case_type": "swarm",
       "status": "pass",
       "has_answer": true,
       "expected_skills": [
@@ -46,6 +69,10 @@
       ],
       "expected_skill_hit": true,
       "keyword_hit": true,
+      "evaluation_focus": [
+        "skill_routing",
+        "single_agent_consultation"
+      ],
       "swarm_enabled": false,
       "agents_involved": null,
       "elapsed_seconds": 20.48,
@@ -63,6 +90,7 @@
       "case_id": "local_rag_guideline",
       "title": "本地 RAG：高血压临床指南",
       "expected_capability": "Milvus 本地知识库 + clinical_guideline Skill",
+      "case_type": "direct_skill",
       "status": "pass",
       "has_answer": true,
       "expected_skills": [
@@ -73,6 +101,9 @@
       ],
       "expected_skill_hit": true,
       "keyword_hit": true,
+      "evaluation_focus": [
+        "local_rag"
+      ],
       "swarm_enabled": false,
       "agents_involved": null,
       "elapsed_seconds": 0.02,
@@ -84,6 +115,7 @@
       "case_id": "emergency_triage",
       "title": "紧急风险识别：胸痛呼吸困难",
       "expected_capability": "急症识别 + 安全分诊",
+      "case_type": "swarm",
       "status": "pass",
       "has_answer": true,
       "expected_skills": [
@@ -95,6 +127,10 @@
       ],
       "expected_skill_hit": true,
       "keyword_hit": true,
+      "evaluation_focus": [
+        "urgent_risk_triage",
+        "skill_routing"
+      ],
       "swarm_enabled": true,
       "agents_involved": [
         "consultation_agent",
@@ -115,6 +151,7 @@
       "case_id": "multiturn_context",
       "title": "多轮上下文追问",
       "expected_capability": "短期记忆 + 上下文理解",
+      "case_type": "multiturn",
       "status": "pass",
       "has_answer": true,
       "expected_skills": [],
@@ -129,6 +166,10 @@
       ],
       "expected_skill_hit": true,
       "keyword_hit": true,
+      "evaluation_focus": [
+        "short_term_context",
+        "urgent_risk_triage"
+      ],
       "swarm_enabled": true,
       "agents_involved": null,
       "elapsed_seconds": 38.69,
