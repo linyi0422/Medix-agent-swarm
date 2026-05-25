@@ -13,6 +13,7 @@
 - 默认通过标准：返回非空回答；需要 Skill 的用例能观察到预期 Skill 调用；回答命中至少一个配置关键词。
 - 排除规则：不使用真实患者隐私数据，不声明真实临床诊断结论，不依赖外网搜索作为通过条件。
 - 可复现入口：`evaluation/build_eval_dataset.py` 生成 `evaluation/datasets/medix_eval_cases.json`，`evaluation/run_eval.py` 从该 JSON 读取用例执行。
+- 原测试套件说明：`evaluation/TEST_ALL_EXPLANATION.md` 梳理了 `examples/test_all.py` 的 26 项工程测试与本 Eval 的关系。
 
 ## 评测范围
 
